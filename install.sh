@@ -1,87 +1,73 @@
 #!/bin/bash
 
-# Solicitar el nombre de dominio
-echo "Ingrese el nombre de su dominio (sin www):"
-read DOMAIN
+echo "🚀 Iniciando instalación de SolBank..."
 
-# Definir directorio base
-BASE_DIR="/root/$DOMAIN"
+# 1️⃣ Solicitar el dominio
+read -p "🌍 Ingresa el dominio (ejemplo: midominio.com): " DOMAIN
 
-# Crear el directorio del dominio
-mkdir -p "$BASE_DIR"
-cd "$BASE_DIR"
+# 2️⃣ Solicitar el Token de GitHub
+read -s -p "🔑 Ingresa tu GitHub Personal Access Token (PAT): " GITHUB_TOKEN
+echo "" # Salto de línea
 
-# Repositorios
-BACKEND_REPO="https://github.com/SolBank24/Api-Solbank.git"
-FRONTEND_REPO="https://github.com/SolBank24/Front-Solbank.git"
+# 3️⃣ Crear directorio con el nombre del dominio
+INSTALL_DIR="/root/$DOMAIN"
+mkdir -p "$INSTALL_DIR"
 
-# Clonar los repositorios
-echo "Clonando el backend..."
-git clone "$BACKEND_REPO"
-echo "Clonando el frontend..."
-git clone "$FRONTEND_REPO"
+echo "📂 Creando directorio en $INSTALL_DIR"
+cd "$INSTALL_DIR"
 
-# Definir nombres de carpetas
-BACKEND_DIR="$BASE_DIR/Api-Solbank"
-FRONTEND_DIR="$BASE_DIR/Front-Solbank"
+# 4️⃣ Clonar los repositorios privados con autenticación
+echo "🔄 Clonando el backend (Api-Solbank)..."
+git clone https://$GITHUB_TOKEN@github.com/SolBank24/Api-Solbank.git
 
-# Configurar Backend
-echo "Configurando el backend..."
-cd "$BACKEND_DIR"
-cp .env.example .env
-composer install
-php artisan key:generate
+echo "🔄 Clonando el frontend (Front-Solbank)..."
+git clone https://$GITHUB_TOKEN@github.com/SolBank24/Front-Solbank.git
 
-# Configurar Frontend
-echo "Configurando el frontend..."
-cd "$FRONTEND_DIR"
-npm install
-npm run build
-
-# Crear red de Docker
-echo "Creando red Docker..."
-docker network create solbanknet || echo "La red ya existe."
-
-# Configurar Nginx
-echo "Configurando Nginx..."
-mkdir -p "$BASE_DIR/nginx"
-cat > "$BASE_DIR/nginx/nginx.conf" <<EOL
-server {
-    listen 80;
-    server_name $DOMAIN;
-    root /var/www/html/public;
-    index index.php index.html;
-    location / {
-        try_files \$uri /index.php?\$query_string;
-    }
-    location ~ \\.php$ {
-        include fastcgi_params;
-        fastcgi_pass php:9000;
-        fastcgi_index index.php;
-        fastcgi_param SCRIPT_FILENAME \$document_root\$fastcgi_script_name;
-    }
-}
-EOL
-
-# Preguntar si instalar SSL
-echo "¿Desea instalar un certificado SSL gratuito con Let's Encrypt? (s/n)"
-read INSTALL_SSL
-if [ "$INSTALL_SSL" == "s" ]; then
-    echo "Instalando Certbot y configurando SSL..."
-    apt update && apt install -y certbot python3-certbot-nginx
-    certbot --nginx -d "$DOMAIN" --non-interactive --agree-tos -m admin@$DOMAIN
+# 5️⃣ Verificar si se clonaron correctamente
+if [ -d "Api-Solbank" ] && [ -d "Front-Solbank" ]; then
+    echo "✅ Repositorios clonados exitosamente"
+else
+    echo "❌ Error al clonar los repositorios, revisa el token o los permisos."
+    exit 1
 fi
 
-# Generar archivo de credenciales
-echo "Generando credenciales..."
-DB_PASS=$(openssl rand -base64 12)
-ADMIN_EMAIL="admin@example.com"
-ADMIN_PASS="password"
-echo "Base de datos: solbankdb" > "$BASE_DIR/credenciales.txt"
-echo "Usuario DB: root" >> "$BASE_DIR/credenciales.txt"
-echo "Contraseña DB: $DB_PASS" >> "$BASE_DIR/credenciales.txt"
-echo "Correo admin: $ADMIN_EMAIL" >> "$BASE_DIR/credenciales.txt"
-echo "Contraseña admin: $ADMIN_PASS" >> "$BASE_DIR/credenciales.txt"
+# 6️⃣ Crear la red de Docker
+echo "🌐 Creando la red Docker solbanknet..."
+docker network create solbanknet || echo "⚠️ La red ya existe, continuando..."
 
-# Mostrar mensaje final
-echo "Configuración completada. Sus credenciales están en $BASE_DIR/credenciales.txt"
+# 7️⃣ Configuración de Backend (Laravel)
+echo "⚙️ Configurando Backend (Laravel)..."
+cd Api-Solbank
+cp .env.example .env
+docker run --rm -v $(pwd):/app -w /app laravelsail/php82-composer:latest composer install
+cd ..
+
+# 8️⃣ Configuración de Frontend (Vue 3)
+echo "⚙️ Configurando Frontend (Vue 3)..."
+cd Front-Solbank
+docker run --rm -v $(pwd):/app -w /app node:18-alpine npm install
+cd ..
+
+# 9️⃣ Preguntar si desea instalar SSL con Let's Encrypt
+read -p "🔒 ¿Deseas instalar un certificado SSL gratuito con Let's Encrypt? (s/n): " INSTALL_SSL
+if [[ "$INSTALL_SSL" == "s" || "$INSTALL_SSL" == "S" ]]; then
+    echo "🔧 Configurando SSL con Certbot..."
+    apt update && apt install -y certbot python3-certbot-nginx
+    certbot --nginx -d "$DOMAIN"
+    echo "✅ Certificado SSL instalado correctamente."
+else
+    echo "⚠️ Saltando instalación de SSL."
+fi
+
+# 🔟 Crear archivo con credenciales importantes
+echo "📝 Guardando credenciales en credenciales.txt..."
+DB_PASSWORD=$(openssl rand -hex 12)
+echo "Dominio: $DOMAIN" > credenciales.txt
+echo "Base de Datos: solbankdb" >> credenciales.txt
+echo "Usuario BD: root" >> credenciales.txt
+echo "Password BD: $DB_PASSWORD" >> credenciales.txt
+echo "Email admin: admin@solbank.com" >> credenciales.txt
+echo "Contraseña admin: admin1234" >> credenciales.txt
+echo "⚠️ Guarda este archivo en un lugar seguro."
+
+echo "🎉 Instalación completada. ¡Bienvenido a SolBank!"
